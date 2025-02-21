@@ -2,3 +2,5 @@ streamlit
 numpy
 scipy
 matplotlib
+seaborn
+fpdf
