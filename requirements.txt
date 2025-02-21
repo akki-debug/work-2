@@ -1,4 +1,7 @@
-streamlit
-numpy
-scipy
+scalib 
+streamlit 
+numpy 
+scipy 
 matplotlib
+seaborn 
+fpdf
