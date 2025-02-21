@@ -1,1 +1,1 @@
-https://work-2-up1.streamlit.app/
+https://work-2-side.streamlit.app/
