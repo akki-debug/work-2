@@ -1,18 +1,21 @@
 import streamlit as st
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.stats import pearsonr
+import seaborn as sns
+from scalib.attacks import cpa
+from scalib.preprocessing import StandardScaler
+import fpdf
 
 # ==========================
 # Streamlit UI Setup
 # ==========================
-st.title("🔍 Correlation Power Analysis (CPA) Attack")
-st.markdown("Recover neural network weights from side-channel traces.")
+st.title("⚡ SCALib-Based CPA Attack")
+st.markdown("Perform high-performance Correlation Power Analysis using SCALib.")
 
 # ==========================
 # File Upload Section
 # ==========================
-st.sidebar.header("Upload Dataset Files")
+st.sidebar.header("📂 Upload Dataset Files")
 waveforms_file = st.sidebar.file_uploader("Upload waveforms.npy", type=["npy"])
 inputs_file = st.sidebar.file_uploader("Upload inputs.npy", type=["npy"])
 weights_file = st.sidebar.file_uploader("Upload weights.npy", type=["npy"])
@@ -28,80 +31,67 @@ if waveforms_file and inputs_file and weights_file:
     st.sidebar.success(f"Ground truth weights: {weights}")
 
     # ==========================
-    # Answer to Question 1
+    # Parameter Tuning
     # ==========================
-    st.subheader("Question 1: Number of Possible Weight Values")
-    st.write("""
-        Each weight is stored in IEEE 754 32-bit format, meaning there are \(2^{32}\) (around 4.29 billion) 
-        possible values. This is computationally infeasible for brute-force attacks.
-    """)
+    st.sidebar.subheader("🔧 CPA Parameters")
+    num_candidates = st.sidebar.slider("Number of Candidates", 100, 5000, 1000)
+    apply_scaling = st.sidebar.checkbox("Apply Standard Scaling", value=True)
 
     # ==========================
-    # CPA Attack Implementation
+    # Feature Scaling (Optional)
     # ==========================
-    def float_to_bin(f):
-        """Convert IEEE 754 float to binary string."""
-        return format(np.frombuffer(np.float32(f).tobytes(), dtype=np.uint32)[0], '032b')
+    if apply_scaling:
+        waveforms = StandardScaler().fit_transform(waveforms)
+        st.sidebar.success("Applied standard scaling.")
 
-    def hamming_weight(n):
-        """Compute the Hamming weight (number of 1s in binary representation)."""
-        return bin(n).count("1")
+    # ==========================
+    # CPA Attack Using SCALib
+    # ==========================
+    st.subheader("🔍 Running CPA Attack with SCALib")
 
-    # Answer to Question 2
-    st.subheader("Question 2: Creating Smaller Chunks")
-    st.write("""
-        Instead of brute-force searching all 32-bit values, we use smaller mantissa chunks while keeping 
-        the exponent fixed. This reduces search space and makes the attack feasible.
-    """)
-
-    # Weight candidates
-    num_candidates = 1000
-    candidates = np.linspace(-2, 2, num_candidates)
-
-    # CPA computation
+    candidates = np.linspace(-2, 2, num_candidates)  # Range of possible weight values
     correlation_matrix = np.zeros((2, num_candidates))
 
     for weight_idx in range(2):  # Two weights to recover
-        for i, w in enumerate(candidates):
-            hw_model = np.array([hamming_weight(int(float_to_bin(x * w), 2)) for x in inputs[:, weight_idx]])
-            correlations = [pearsonr(hw_model, waveforms[:, sample_idx])[0] for sample_idx in range(num_samples)]
-            correlation_matrix[weight_idx, i] = max(correlations)
+        leakage_hypotheses = np.array([inputs[:, weight_idx] * w for w in candidates]).T
+        cpa_result = cpa(waveforms, leakage_hypotheses)
+        correlation_matrix[weight_idx, :] = np.max(np.abs(cpa_result), axis=0)
 
+    # Identify the best-matching weights
     recovered_weights = [candidates[np.argmax(correlation_matrix[i])] for i in range(2)]
-
-    # ==========================
-    # Answer to Question 3
-    # ==========================
-    st.subheader("Question 3: Using Chunks in CPA")
-    st.write("""
-        We recover weights by:
-        1. Guessing small weight chunks.
-        2. Computing hypothetical leakage values.
-        3. Performing CPA on each chunk separately.
-        4. Combining results to reconstruct the full weight.
-    """)
-
-    # ==========================
-    # Display Results
-    # ==========================
-    st.subheader("🔑 Recovered Weights")
-    st.write(f"**Weight 1:** {recovered_weights[0]}")
-    st.write(f"**Weight 2:** {recovered_weights[1]}")
+    st.write(f"**Recovered Weights:** {recovered_weights}")
     st.write(f"**Actual Weights:** {weights}")
 
     # ==========================
-    # Correlation Plot
+    # Correlation Heatmap
     # ==========================
-    st.subheader("📊 Correlation Analysis")
-    fig, ax = plt.subplots(figsize=(10, 5))
-    ax.plot(candidates, correlation_matrix[0], label="Weight 1 Correlation")
-    ax.plot(candidates, correlation_matrix[1], label="Weight 2 Correlation")
-    ax.set_xlabel("Weight Candidates")
-    ax.set_ylabel("Max Correlation")
-    ax.set_title("Correlation Power Analysis (CPA) Results")
-    ax.legend()
-    ax.grid()
+    st.subheader("📊 CPA Correlation Heatmap")
+    fig, ax = plt.subplots(figsize=(10, 6))
+    sns.heatmap(correlation_matrix, cmap="coolwarm", xticklabels=100, yticklabels=50)
+    plt.title("CPA Correlation Heatmap (SCALib)")
+    plt.xlabel("Candidate Weights")
+    plt.ylabel("Weight Index (0=First Weight, 1=Second Weight)")
     st.pyplot(fig)
+
+    # ==========================
+    # Downloadable Report
+    # ==========================
+    st.sidebar.subheader("📥 Download Report")
+
+    def generate_pdf():
+        pdf = fpdf.FPDF()
+        pdf.add_page()
+        pdf.set_font("Arial", size=12)
+        pdf.cell(200, 10, txt="SCALib CPA Attack Report", ln=True, align="C")
+        pdf.ln(10)
+        pdf.cell(200, 10, txt=f"Recovered Weights: {recovered_weights}", ln=True)
+        pdf.cell(200, 10, txt=f"Actual Weights: {weights}", ln=True)
+        pdf.output("scalib_cpa_report.pdf")
+
+    generate_pdf()
+
+    with open("scalib_cpa_report.pdf", "rb") as f:
+        st.sidebar.download_button("Download Report", f, file_name="SCALib_CPA_Report.pdf", mime="application/pdf")
 
 else:
     st.warning("Please upload all three files to run the attack.")
