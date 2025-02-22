@@ -2,9 +2,9 @@ import streamlit as st
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from scalib.attacks import cpa
-from scalib.preprocessing import StandardScaler
 import fpdf
+from scalib.preprocessing import StandardScaler
+import scalib.attacks as attacks  # Import the entire module
 
 # ==========================
 # Streamlit UI Setup
@@ -52,46 +52,53 @@ if waveforms_file and inputs_file and weights_file:
     candidates = np.linspace(-2, 2, num_candidates)  # Range of possible weight values
     correlation_matrix = np.zeros((2, num_candidates))
 
-    for weight_idx in range(2):  # Two weights to recover
-        leakage_hypotheses = np.array([inputs[:, weight_idx] * w for w in candidates]).T
-        cpa_result = cpa(waveforms, leakage_hypotheses)
-        correlation_matrix[weight_idx, :] = np.max(np.abs(cpa_result), axis=0)
+    # Attempt to fetch CPA function dynamically
+    cpa_function = getattr(attacks, "cpa", None)
 
-    # Identify the best-matching weights
-    recovered_weights = [candidates[np.argmax(correlation_matrix[i])] for i in range(2)]
-    st.write(f"**Recovered Weights:** {recovered_weights}")
-    st.write(f"**Actual Weights:** {weights}")
+    if not cpa_function:
+        st.error("Error: CPA function not found in SCALib. Please check your SCALib installation.")
+    else:
+        for weight_idx in range(2):  # Two weights to recover
+            leakage_hypotheses = np.array([inputs[:, weight_idx] * w for w in candidates]).T
+            cpa_result = cpa_function(waveforms, leakage_hypotheses)
+            correlation_matrix[weight_idx, :] = np.max(np.abs(cpa_result), axis=0)
 
-    # ==========================
-    # Correlation Heatmap
-    # ==========================
-    st.subheader("📊 CPA Correlation Heatmap")
-    fig, ax = plt.subplots(figsize=(10, 6))
-    sns.heatmap(correlation_matrix, cmap="coolwarm", xticklabels=100, yticklabels=50)
-    plt.title("CPA Correlation Heatmap (SCALib)")
-    plt.xlabel("Candidate Weights")
-    plt.ylabel("Weight Index (0=First Weight, 1=Second Weight)")
-    st.pyplot(fig)
+        # Identify the best-matching weights
+        recovered_weights = [candidates[np.argmax(correlation_matrix[i])] for i in range(2)]
+        st.write(f"**Recovered Weights:** {recovered_weights}")
+        st.write(f"**Actual Weights:** {weights}")
 
-    # ==========================
-    # Downloadable Report
-    # ==========================
-    st.sidebar.subheader("📥 Download Report")
+        # ==========================
+        # Correlation Heatmap
+        # ==========================
+        st.subheader("📊 CPA Correlation Heatmap")
+        fig, ax = plt.subplots(figsize=(10, 6))
+        sns.heatmap(correlation_matrix, cmap="coolwarm", xticklabels=100, yticklabels=50)
+        plt.title("CPA Correlation Heatmap (SCALib)")
+        plt.xlabel("Candidate Weights")
+        plt.ylabel("Weight Index (0=First Weight, 1=Second Weight)")
+        st.pyplot(fig)
 
-    def generate_pdf():
-        pdf = fpdf.FPDF()
-        pdf.add_page()
-        pdf.set_font("Arial", size=12)
-        pdf.cell(200, 10, txt="SCALib CPA Attack Report", ln=True, align="C")
-        pdf.ln(10)
-        pdf.cell(200, 10, txt=f"Recovered Weights: {recovered_weights}", ln=True)
-        pdf.cell(200, 10, txt=f"Actual Weights: {weights}", ln=True)
-        pdf.output("scalib_cpa_report.pdf")
+        # ==========================
+        # Downloadable Report
+        # ==========================
+        st.sidebar.subheader("📥 Download Report")
 
-    generate_pdf()
+        def generate_pdf():
+            pdf = fpdf.FPDF()
+            pdf.add_page()
+            pdf.set_font("Arial", size=12)
+            pdf.cell(200, 10, txt="SCALib CPA Attack Report", ln=True, align="C")
+            pdf.ln(10)
+            pdf.cell(200, 10, txt=f"Recovered Weights: {recovered_weights}", ln=True)
+            pdf.cell(200, 10, txt=f"Actual Weights: {weights}", ln=True)
+            pdf.output("scalib_cpa_report.pdf")
 
-    with open("scalib_cpa_report.pdf", "rb") as f:
-        st.sidebar.download_button("Download Report", f, file_name="SCALib_CPA_Report.pdf", mime="application/pdf")
+        generate_pdf()
+
+        with open("scalib_cpa_report.pdf", "rb") as f:
+            st.sidebar.download_button("Download Report", f, file_name="SCALib_CPA_Report.pdf", mime="application/pdf")
 
 else:
     st.warning("Please upload all three files to run the attack.")
+
