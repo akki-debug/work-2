@@ -3,8 +3,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import fpdf
-from scalib.preprocessing import StandardScaler
-import scalib.attacks as attacks  # Import the entire module
+from sklearn.preprocessing import StandardScaler  # Use sklearn instead of scalib
+import scalib.attacks as attacks  # Import entire module
 
 # ==========================
 # Streamlit UI Setup
@@ -101,4 +101,3 @@ if waveforms_file and inputs_file and weights_file:
 
 else:
     st.warning("Please upload all three files to run the attack.")
-
